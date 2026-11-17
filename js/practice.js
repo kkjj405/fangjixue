@@ -134,13 +134,20 @@
         '<span class="cn">' + esc(c.no) + '　' + esc(c.name) + '</span>' +
         '<span class="chip gray tiny">' + n + '/' + list.length + '</span>' +
         '<span class="caret">' + icon('right') + '</span></div>' +
-        '<div class="chap-bd">' + (c.sections || []).map(function (s) {
-          var items = [];
+        '<div class="chap-bd">' + (c.sections || []).map(function (s, si) {
+          var items = [], list2 = [];
           (s.formulas || []).forEach(function (name) {
             var m = Z.formulas.filter(function (x) { return x.kind === 'main' && x.name === name; })[0];
-            if (m) items.push(selRow(m));
+            if (m) { items.push(selRow(m)); list2.push(m); }
           });
-          return '<div class="sec">' + (s.name ? '<div class="sec-t">' + esc(s.name) + '</div>' : '') + items.join('') + '</div>';
+          if (!items.length) return '';
+          var sn = list2.filter(function (f) { return st.sel[f.id]; }).length;
+          var secHead = (s.name || list2.length)
+            ? '<div class="sec-t"><label class="ck" style="margin-right:6px"><input type="checkbox" data-sec="' + ci + ':' + si + '"' +
+              (sn === list2.length && list2.length ? ' checked' : '') + '></label>' + esc(s.name || '未分节') +
+              ' <span class="tiny dim">' + sn + '/' + list2.length + '</span></div>'
+            : '';
+          return '<div class="sec">' + secHead + items.join('') + '</div>';
         }).join('') + '</div></div>');
     });
     h.push(chapHtml.join(''));
@@ -200,6 +207,22 @@
         el.classList.toggle('open', !!st.setupOpen[ci]);
       };
     });
+    main.querySelectorAll('[data-sec]').forEach(function (ck2) {
+      ck2.onclick = function (e) {
+        e.stopPropagation();
+        var parts = ck2.getAttribute('data-sec').split(':');
+        var c2 = Z.chapters[+parts[0]], sec2 = (c2.sections || [])[+parts[1]];
+        if (!sec2) return;
+        var l3 = [];
+        (sec2.formulas || []).forEach(function (name) {
+          var m = Z.formulas.filter(function (x) { return x.kind === 'main' && x.name === name; })[0];
+          if (m) l3.push(m);
+        });
+        var allOn = l3.length > 0 && l3.every(function (f) { return st.sel[f.id]; });
+        l3.forEach(function (f) { if (allOn) delete st.sel[f.id]; else st.sel[f.id] = 1; });
+        renderSetup(main, [], { mode: st.mode });
+      };
+    });
     main.querySelectorAll('[data-chk]').forEach(function (ck) {
       ck.onclick = function (e) {
         e.stopPropagation();
@@ -223,6 +246,20 @@
         for (var k = 0; k < list.length; k++) { if (list[k].id === id) { has = true; break; } }
         if (!has) return;
         var n = 0; list.forEach(function (f) { if (st.sel[f.id]) n++; });
+        el.querySelectorAll('[data-sec]').forEach(function (ck3) {
+          var pr = ck3.getAttribute('data-sec').split(':');
+          if (+pr[0] !== i) return;
+          var sec3 = (c.sections || [])[+pr[1]];
+          if (!sec3) return;
+          var l4 = [];
+          (sec3.formulas || []).forEach(function (nm) {
+            var mm = Z.formulas.filter(function (x) { return x.kind === 'main' && x.name === nm; })[0];
+            if (mm) l4.push(mm);
+          });
+          var on = l4.length > 0 && l4.every(function (f) { return st.sel[f.id]; });
+          ck3.checked = on;
+          ck3.indeterminate = !on && l4.some(function (f) { return st.sel[f.id]; });
+        });
         var chip = el.querySelector('.chap-hd .chip');
         if (chip) chip.textContent = n + '/' + list.length;
         var hc = el.querySelector('.chap-hd input[type=checkbox]');
@@ -472,6 +509,7 @@
         var c = correct[i];
         if (!c || !x) continue;
         if (x.indexOf(c) >= 0 || c.indexOf(x) >= 0) return true;   // 甘草 / 炙甘草 这类互斥
+        if (Z.normDrug && Z.normDrug(x) && Z.normDrug(x) === Z.normDrug(c)) return true;  // 白芍/芍药、生地/生地黄 等别名族
       }
       return false;
     }
@@ -555,7 +593,8 @@
     var h = [progressHTML(doneCount, total)];
     h.push('<div class="qname">' + esc(f.name) + '</div>');
     if (q.field === 'roles') {
-      h.push('<div class="qmeta">第 ' + (run.i + 1) + ' / ' + total + ' 题 · 君臣佐使（' + ((q.subs || []).length) + ' 小题）</div>');
+      h.push('<div class="qmeta">第 ' + (run.i + 1) + ' / ' + total + ' 题 · 君臣佐使' +
+        (q.skip ? '（教材未载，可跳过）' : '（' + ((q.subs || []).length) + ' 小题）') + '</div>');
     } else {
       h.push('<div class="qmeta">第 ' + (run.i + 1) + ' / ' + total + ' 题 · 请选出它的「' + (fd ? fd.name : q.field) + '」' +
         (q.single ? '' : '正确内容（可多选）') + '</div>');
@@ -621,6 +660,13 @@
     main.innerHTML = h.join('');
 
     if (!q.done) {
+      if (q.skip) {
+        var skipBtn = main.querySelector('#btn-submit');
+        if (skipBtn) skipBtn.onclick = function () {
+          q.done = true; saveRun(); renderTcRun(main); window.scrollTo(0, 0);
+        };
+        return;
+      }
       main.querySelectorAll('[data-oi]').forEach(function (el) {
         el.onclick = function () {
           var i = +el.getAttribute('data-oi');
@@ -718,7 +764,12 @@
   }
   function beforeRoute(h) {
     if (!run) return true;
-    if (h === '#/practice/run?id=' + run.id) return true;
+    var m = /^#\/practice\/run\?(.*)$/.exec(h || '');
+    if (m) {
+      var qs = {};
+      m[1].split('&').forEach(function (kv) { var p2 = kv.split('='); qs[decodeURIComponent(p2[0])] = decodeURIComponent(p2[1] || ''); });
+      if (qs.id === run.id) return true;
+    }
     try { history.replaceState(null, '', '#/practice/run?id=' + run.id); } catch (e) { }
     requestExit();
     return false;

@@ -258,8 +258,13 @@
     main.innerHTML = h.join('');
     var input = main.querySelector('#d-kw'), box = main.querySelector('#d-list');
 
+    function bareName(n) { return String(n || '').replace(/（[^）]*）/g, '').replace(/\([^()]*\)/g, '').trim(); }
     function formulaIdByName(name) {
-      var cand = Z.formulas.filter(function (f) { return f.name === name; });
+      var key = bareName(name);
+      var cand = Z.formulas.filter(function (f) { return f.name === name || bareName(f.name) === key; });
+      if (!cand.length) {
+        cand = Z.formulas.filter(function (f) { return bareName(f.name).indexOf(key) === 0; });
+      }
       if (!cand.length) return null;
       var mainOne = cand.filter(function (f) { return f.kind === 'main'; })[0];
       return (mainOne || cand[0]).id;
@@ -344,7 +349,11 @@
           return '<span class="chip ' + cls + '">' + esc(x) + '</span>';
         }).join('') + '</div>' : '<div class="small dim">（无）</div>';
       }
-      out.innerHTML = '<div class="card"><div class="row between"><div class="b">对比结果</div>' +
+      var derived = (r.a.ingredients.length === 0) || (r.b.ingredients.length === 0);
+      out.innerHTML = (derived ? '<div class="card" style="background:#fbf4e6;border-color:#e6d5b3"><div class="small" style="color:#7d2c21">' +
+        '提示：<b>' + esc((r.a.ingredients.length === 0 ? r.a.name : r.b.name)) + '</b> 的组成原文是「即某方加某药」的派生写法，' +
+        '程序不拆药名，因此这首方的药名对比结果会为空。</div></div>' : '') +
+        '<div class="card"><div class="row between"><div class="b">对比结果</div>' +
         '<div class="tiny dim">' + esc(r.a.name) + ' ⇄ ' + esc(r.b.name) + '</div></div>' +
         '<div class="cmp-res">' +
         '<div class="cmp-sec"><div class="cmp-lab">共同含有的药（' + r.common.length + '）</div>' + chips(r.common, 'solid') + '</div>' +

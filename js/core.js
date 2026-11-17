@@ -94,6 +94,48 @@
     }
     return flat.split('、').map(function (p) { return cleanDrug(p); }).filter(Boolean);
   }
+  /* ---------------- 药名归一（仅用于对比/干扰项，不改显示原文） ---------------- */
+  var DRUG_ALIAS = {
+    '生甘草': '甘草', '炙甘草': '甘草', '粉草': '甘草', '国老': '甘草', '甘草梢': '甘草',
+    '白芍': '芍药', '白芍药': '芍药',
+    '生地': '地黄', '生地黄': '地黄', '干地黄': '地黄', '大生地': '地黄',
+    '熟地': '熟地黄', '大熟地': '熟地黄', '大怀熟': '熟地黄', '怀熟地': '熟地黄',
+    '元参': '玄参', '黑参': '玄参',
+    '干葛': '葛根', '粉葛': '葛根', '粉葛根': '葛根',
+    '山栀': '栀子', '山栀子': '栀子', '栀子仁': '栀子', '山枝': '栀子',
+    '银花': '金银花', '忍冬花': '金银花',
+    '元胡': '延胡索', '玄胡索': '延胡索', '延胡': '延胡索',
+    '云苓': '茯苓', '白茯苓': '茯苓', '云茯苓': '茯苓',
+    '麦冬': '麦门冬', '寸冬': '麦门冬',
+    '天冬': '天门冬',
+    '橘红': '陈皮', '橘皮': '陈皮', '广陈皮': '陈皮',
+    '锦黄芪': '黄芪', '绵黄芪': '黄芪', '生黄芪': '黄芪', '炙黄芪': '黄芪',
+    '归身': '当归', '当归身': '当归', '全当归': '当归',
+    '牡丹皮': '丹皮',
+    '栝楼实': '瓜蒌', '瓜蒌实': '瓜蒌', '栝楼': '瓜蒌',
+    '栝楼根': '天花粉', '瓜蒌根': '天花粉',
+    '枣': '大枣', '红枣': '大枣',
+    '桂心': '肉桂', '官桂': '肉桂',
+    '川军': '大黄', '锦纹': '大黄', '生大黄': '大黄', '酒大黄': '大黄', '熟大黄': '大黄',
+    '黑姜': '炮姜', '姜炭': '炮姜',
+    '真川连': '黄连', '川连': '黄连', '小川连': '黄连', '川黄连': '黄连',
+    '条参': '党参', '潞党参': '党参',
+    '蓬砂': '硼砂', '月石': '硼砂',
+    '当门子': '麝香', '元寸': '麝香',
+    '梅冰': '冰片', '梅片': '冰片', '梅花冰片': '冰片',
+    '飞金': '金箔',
+    '于术': '白术', '冬术': '白术',
+    '抚芎': '川芎'
+  };
+  var COOK_PREFIX = /^(生|炙|炒|焦|煨|制|炮|酒|盐|醋|蜜|姜|土|麸|米|砂|炭|鲜|干|净|水飞|去皮|去心|去节|去芦|去毛|去核|去油|去刺)/;
+  function normDrug(name) {
+    var t = String(name || '').replace(/（[^）]*）/g, '').replace(/\([^()]*\)/g, '').trim();
+    if (!t) return '';
+    var guard = 0;
+    while (guard++ < 3 && COOK_PREFIX.test(t) && t.length >= 3) t = t.replace(COOK_PREFIX, '');
+    return DRUG_ALIAS[t] || t;
+  }
+
   function shuffle(a) {
     a = a.slice();
     for (var i = a.length - 1; i > 0; i--) {
@@ -170,7 +212,7 @@
   }
 
   /* 编辑框里「方解」的文本格式： 君｜麻黄｜说明 / 臣｜桂枝｜说明 / 配伍｜说明 / 总括｜说明 / 药名｜说明 */
-  var ROLE_NAMES = ['君', '臣', '佐', '使', '佐使'];
+  var ROLE_NAMES = ['君', '臣', '佐', '使', '佐使', '臣佐'];
   function analysisToText(a) {
     var lines = [];
     (a.roles || []).forEach(function (r) {
@@ -289,15 +331,15 @@
     var a = byId[idA], b = byId[idB];
     if (!a || !b) return null;
     var va = view(a), vb = view(b);
-    var setA = va.ingredients.slice(), setB = vb.ingredients.slice();
+    var mapA = {}, mapB = {}, orderA = [], orderB = [];
+    va.ingredients.forEach(function (n) { var k = normDrug(n); if (k && !mapA[k]) { mapA[k] = n; orderA.push(k); } });
+    vb.ingredients.forEach(function (n) { var k = normDrug(n); if (k && !mapB[k]) { mapB[k] = n; orderB.push(k); } });
     var common = [], onlyA = [], onlyB = [];
-    var seenA = Object.create(null);
-    setA.forEach(function (x) { seenA[x] = 1; });
-    var seenB = Object.create(null);
-    setB.forEach(function (x) { seenB[x] = 1; });
-    setA.forEach(function (x) { if (seenB[x] && common.indexOf(x) < 0) common.push(x); });
-    setA.forEach(function (x) { if (!seenB[x] && onlyA.indexOf(x) < 0) onlyA.push(x); });
-    setB.forEach(function (x) { if (!seenA[x] && onlyB.indexOf(x) < 0) onlyB.push(x); });
+    orderA.forEach(function (k) {
+      if (mapB[k]) common.push(mapA[k]);
+      else onlyA.push(mapA[k]);
+    });
+    orderB.forEach(function (k) { if (!mapA[k]) onlyB.push(mapB[k]); });
     return { a: va, b: vb, common: common, onlyA: onlyA, onlyB: onlyB };
   }
 
@@ -313,6 +355,7 @@
     isFav: isFav, favGroup: favGroup, toggleFav: toggleFav, favList: favList,
     isHidden: isHidden, setHidden: setHidden, hiddenCount: hiddenCount,
     note: note, setNote: setNote, noteCount: noteCount,
-    searchFormulas: searchFormulas, compareFormulas: compareFormulas
+    searchFormulas: searchFormulas, compareFormulas: compareFormulas,
+    normDrug: normDrug, DRUG_ALIAS: DRUG_ALIAS
   };
 })();
