@@ -1,6 +1,6 @@
 /* 版本号：发版时改这里 + APK 里的 BUNDLED_* */
 window.FJX_VERSION = {
-  app: '1.0.1',
-  web: '1.0.1',
+  app: '1.0.2',
+  web: '1.0.2',
   build: '2026-11-18'
 };

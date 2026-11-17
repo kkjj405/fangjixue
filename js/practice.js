@@ -166,6 +166,29 @@
 
     function refreshCount() {
       document.getElementById('sel-n').textContent = selCount();
+      // 首屏同步章级半选状态
+      Z.chapters.forEach(function (c, i2) {
+        var el2 = main.querySelector('[data-chap="' + i2 + '"]');
+        if (!el2) return;
+        var list2 = chapterList(c);
+        var n2 = list2.filter(function (f) { return st.sel[f.id]; }).length;
+        var hc2 = el2.querySelector('.chap-hd input[type=checkbox]');
+        if (hc2) { hc2.checked = (n2 === list2.length && n2 > 0); hc2.indeterminate = (n2 > 0 && n2 < list2.length); }
+        el2.querySelectorAll('[data-sec]').forEach(function (ck4) {
+          var p4 = ck4.getAttribute('data-sec').split(':');
+          if (+p4[0] !== i2) return;
+          var sec4 = (c.sections || [])[+p4[1]];
+          if (!sec4) return;
+          var l5 = [];
+          (sec4.formulas || []).forEach(function (nm2) {
+            var mm2 = Z.formulas.filter(function (x) { return x.kind === 'main' && x.name === nm2; })[0];
+            if (mm2) l5.push(mm2);
+          });
+          var on2 = l5.length > 0 && l5.every(function (f) { return st.sel[f.id]; });
+          ck4.checked = on2;
+          ck4.indeterminate = !on2 && l5.some(function (f) { return st.sel[f.id]; });
+        });
+      });
       var ids = practiceIds();
       var per = st.mode === 'mo' ? ids.length : ids.length * st.fields.length;
       var hint = document.getElementById('start-hint');
