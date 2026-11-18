@@ -65,6 +65,88 @@
       '<div class="chap-bd">' + rows.join('') + '</div></div>';
   }
 
+  /* ---------- 目录列表（可单独刷新，不动搜索框） ---------- */
+  function matchMain(m, kw) {
+    if (!kw) return true;
+    if (m.name.indexOf(kw) >= 0) return true;
+    return (m.attached || []).some(function (aid) {
+      var ad = Z.byId[aid];
+      return ad && ad.name.indexOf(kw) >= 0;
+    });
+  }
+  function catListHTML() {
+    var kw = catState.kw;
+    var out = [], rows = 0, mains = 0;
+    Z.chapters.forEach(function (c, ci) {
+      var h = chapterHTML(c, ci);
+      if (h) out.push(h);
+    });
+    (function count() {
+      Z.chapters.forEach(function (c) {
+        (c.sections || []).forEach(function (sec) {
+          (sec.formulas || []).forEach(function (name) {
+            var m = Z.formulas.filter(function (x) { return x.kind === 'main' && x.name === name; })[0];
+            if (!m || !matchMain(m, kw)) return;
+            mains++;
+            rows++;
+            (m.attached || []).forEach(function (aid) {
+              var ad = Z.byId[aid];
+              if (!ad) return;
+              if (kw && ad.name.indexOf(kw) < 0 && m.name.indexOf(kw) < 0) return;
+              rows++;
+            });
+          });
+        });
+      });
+    })();
+    if (!out.length) {
+      return '<div class="empty">没有找到包含「' + esc(kw) + '」的方剂<br>' +
+        '<span class="small dim">试试更短的关键词（如「桂」「柴胡」），或清空搜索</span></div>';
+    }
+    if (kw) {
+      out.unshift('<div class="tiny dim" style="margin:0 4px 8px">匹配 <b style="color:#7d2c21">' + mains +
+        '</b> 首正方（共 ' + rows + ' 条，含附方）· 点方名进卡片</div>');
+    } else {
+      out.push('<div class="small dim center" style="margin:16px 0 6px">— 共 ' + Z.chapters.length + ' 章 · ' +
+        Z.formulas.length + ' 首（含附方）—</div>');
+    }
+    return out.join('');
+  }
+
+  function bindCatalogList(main) {
+    main.querySelectorAll('[data-chap]').forEach(function (el) {
+      var hd = el.querySelector('.chap-hd');
+      if (hd) hd.onclick = function () {
+        var ci = el.getAttribute('data-chap');
+        catState.open[ci] = !catState.open[ci];
+        el.classList.toggle('open', !!catState.open[ci]);
+      };
+    });
+    main.querySelectorAll('[data-dr]').forEach(function (el) {
+      el.onclick = function (e) {
+        var id = el.getAttribute('data-dr');
+        if (catState.manage) {
+          if (e.target.closest && e.target.closest('.ck')) return;
+          toggleSel(id);
+          el.classList.toggle('sel', !!catState.sel[id]);
+          var ck = el.querySelector('input'); if (ck) ck.checked = !!catState.sel[id];
+          paintManageBar();
+          return;
+        }
+        UI.go('#/card/' + id);
+      };
+    });
+    main.querySelectorAll('[data-ck]').forEach(function (ck) {
+      ck.onclick = function (e) {
+        e.stopPropagation();
+        var id = ck.getAttribute('data-ck');
+        toggleSel(id);
+        var row = ck.closest('.dr'); if (row) row.classList.toggle('sel', !!catState.sel[id]);
+        paintManageBar();
+      };
+    });
+  }
+
   function renderCatalog(main) {
     var mg = catState.manage;
     UI.header({
@@ -87,59 +169,34 @@
     }
     html.push('<div class="searchbox mb10" style="margin-bottom:10px"><svg class="s-ico" viewBox="0 0 24 24">' +
       '<circle cx="11" cy="11" r="6.5" fill="none" stroke-width="1.9"/><path d="m16 16 4.5 4.5" stroke-width="1.9" stroke-linecap="round" fill="none"/></svg>' +
-      '<input class="input" id="cat-kw" placeholder="在本目录中查找方剂名（如 麻黄汤）" value="' + esc(catState.kw) + '"></div>');
+      '<input class="input" id="cat-kw" placeholder="在本目录中查找方剂名（如 麻黄汤）" value="' + esc(catState.kw) + '" ' +
+      'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>');
     if (mg) {
       html.push('<div class="card flat" style="padding:9px 11px"><div class="row between"><span class="small muted">勾选要隐藏（或取消隐藏）的方剂</span>' +
         '<span class="chip solid tiny" id="sel-count">已选 ' + selCount() + '</span></div></div>');
     }
-    Z.chapters.forEach(function (c, ci) { html.push(chapterHTML(c, ci)); });
-    html.push('<div class="small dim center" style="margin:16px 0 6px">— 共 ' + Z.chapters.length + ' 章 · ' +
-      Z.formulas.length + ' 首（含附方）—</div>');
+    html.push('<div id="cat-list">' + catListHTML() + '</div>');
     main.innerHTML = html.join('');
     main.className = mg ? 'has-bar' : '';
+    bindCatalogList(main);
 
-    main.querySelectorAll('[data-chap]').forEach(function (el) {
-      el.querySelector('.chap-hd').onclick = function () {
-        var ci = el.getAttribute('data-chap');
-        catState.open[ci] = !catState.open[ci];
-        el.classList.toggle('open', !!catState.open[ci]);
-      };
-    });
-    main.querySelectorAll('[data-dr]').forEach(function (el) {
-      el.onclick = function (e) {
-        var id = el.getAttribute('data-dr');
-        if (mg) {
-          if (e.target.closest && e.target.closest('.ck')) return;
-          toggleSel(id);
-          el.classList.toggle('sel', !!catState.sel[id]);
-          var ck = el.querySelector('input'); if (ck) ck.checked = !!catState.sel[id];
-          paintManageBar();
-          return;
-        }
-        UI.go('#/card/' + id);
-      };
-    });
-    main.querySelectorAll('[data-ck]').forEach(function (ck) {
-      ck.onclick = function (e) {
-        e.stopPropagation();
-        var id = ck.getAttribute('data-ck');
-        toggleSel(id);
-        ck.closest('.dr').classList.toggle('sel', !!catState.sel[id]);
-        paintManageBar();
-      };
-    });
+    /* 搜索框：永不重建，输入法合成期间不刷新，只替换 #cat-list */
     var kw = main.querySelector('#cat-kw');
     if (kw) {
-      var t = null;
-      kw.oninput = function () {
-        clearTimeout(t);
-        t = setTimeout(function () {
-          catState.kw = kw.value.trim();
-          var pos = kw.selectionStart;
-          renderCatalog(main);
-          var n = main.querySelector('#cat-kw');
-          if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { } }
-        }, 220);
+      var composing = false, timer = null;
+      function applyFilter() {
+        catState.kw = kw.value.trim();
+        var box = main.querySelector('#cat-list');
+        if (box) { box.innerHTML = catListHTML(); bindCatalogList(main); }
+        if (catState.manage) paintManageBar(main);
+      }
+      function schedule() { clearTimeout(timer); timer = setTimeout(applyFilter, 180); }
+      kw.addEventListener('compositionstart', function () { composing = true; });
+      kw.addEventListener('compositionend', function () { composing = false; schedule(); });
+      kw.oninput = function () { if (composing) return; schedule(); };
+      kw.onkeydown = function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); applyFilter(); kw.blur(); }
+        else if (e.key === 'Escape') { kw.value = ''; catState.kw = ''; clearTimeout(timer); applyFilter(); }
       };
     }
     var sh = main.querySelector('#show-hidden');
@@ -440,6 +497,11 @@
     if (nv) nv.onclick = function () { togglePanel(main, id, 'note'); };
 
     document.onkeydown = function (e) {
+      // 输入框 / 输入法合成 / 非卡片页 时不响应方向键，避免打断搜索或误跳转
+      if (e.isComposing || e.keyCode === 229) return;
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if ((location.hash || '').indexOf('#/card/') !== 0) return;
       if (e.key === 'ArrowLeft' && prevId) UI.go('#/card/' + prevId);
       if (e.key === 'ArrowRight' && nextId) UI.go('#/card/' + nextId);
     };
