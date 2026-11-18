@@ -51,8 +51,12 @@
       '<div class="mini"><div><b>' + (st.main || 236) + '</b>正方</div>' +
       '<div><b>' + (st.attach || 223) + '</b>附方</div>' +
       '<div><b>' + (st.differentials || 90) + '</b>鉴别</div></div></div>');
-    h.push('<div class="notice"><div class="nt">' + icon('list') + '公告</div>' +
-      '<div class="nb">' + ANNOUNCE.map(function (t) { return '<div style="margin-bottom:4px">' + esc(t) + '</div>'; }).join('') + '</div></div>');
+    var annOpen = !!(Z.store.settings && Z.store.settings.annOpen);
+    h.push('<div class="notice' + (annOpen ? ' open' : '') + '" id="ann-box">' +
+      '<div class="nt" id="ann-hd">' + icon('list') + '<span>公告</span><span class="grow"></span>' +
+      '<span class="ann-tog">' + (annOpen ? '收起' : '展开') + '</span>' +
+      '<span class="ann-caret">' + icon('right') + '</span></div>' +
+      '<div class="nb" id="ann-bd">' + ANNOUNCE.map(function (t) { return '<div style="margin-bottom:4px">' + esc(t) + '</div>'; }).join('') + '</div></div>');
     if (last) {
       h.push('<div class="card" style="padding:12px 14px"><div class="row between">' +
         '<div><div class="tiny dim">上次看到</div><div class="b">' + esc(last.name) + '</div></div>' +
@@ -75,6 +79,15 @@
       '<div class="hr"></div><div class="tiny dim">所有内容来自你提供的教材整理稿，未引入任何外部资料；本机离线可用。</div></div>');
     main.innerHTML = h.join('');
     UI.bind(main, '[data-go]', function (el) { UI.go(el.getAttribute('data-go')); });
+    var annHd = main.querySelector('#ann-hd');
+    if (annHd) annHd.onclick = function () {
+      var box = main.querySelector('#ann-box');
+      var willOpen = !box.classList.contains('open');
+      box.classList.toggle('open', willOpen);
+      if (Z.store.settings) { Z.store.settings.annOpen = willOpen ? 1 : 0; Z.save(); }
+      var tog = box.querySelector('.ann-tog');
+      if (tog) tog.textContent = willOpen ? '收起' : '展开';
+    };
     var gl = main.querySelector('#go-last');
     if (gl) gl.onclick = function () { UI.go('#/card/' + last.id); };
   }
@@ -311,18 +324,32 @@
   }
 
   /* =================================================================
-   *  组成对比
+   *  组成对比（可选可搜索）
    * ================================================================= */
-  var CMP = { a: '', b: '' };
-  function optionHTML(sel) {
-    var out = [];
-    Z.order.forEach(function (id) {
-      var f = Z.byId[id];
-      if (!f) return;
-      out.push('<option value="' + f.id + '"' + (sel === f.id ? ' selected' : '') + '>' +
-        esc((f.kind === 'attach' ? '附：' : '') + f.name) + '（' + esc(f.chapterNo) + '）</option>');
-    });
-    return out.join('');
+  var CMP = { a: '', b: '', pick: '', kw: '' };
+
+  function pickCandidates(kw) {
+    kw = String(kw || '').trim();
+    var list = Z.order.map(function (id) { return Z.byId[id]; }).filter(Boolean);
+    if (kw) {
+      list = list.filter(function (f) {
+        return f.name.indexOf(kw) >= 0 ||
+          (f.chapterName || '').indexOf(kw) >= 0 ||
+          (f.chapterNo || '').indexOf(kw) >= 0 ||
+          (f.sectionName || '').indexOf(kw) >= 0;
+      });
+    }
+    return list.slice(0, 80);
+  }
+  function pickListHTML() {
+    var list = pickCandidates(CMP.kw);
+    if (!list.length) return UI.emptyBox('没有匹配的方剂', '换个关键词试试，比如「桂枝」「柴胡」「补益」');
+    return list.map(function (f) {
+      return '<div class="pick-item" data-pick-id="' + f.id + '">' +
+        '<div class="pi-n">' + esc((f.kind === 'attach' ? '附：' : '') + f.name) + '</div>' +
+        '<div class="pi-s">' + esc(f.chapterNo + ' ' + f.chapterName + (f.sectionName ? ' · ' + f.sectionName : '')) + '</div>' +
+        '</div>';
+    }).join('');
   }
   function renderCompare(main, p, q) {
     UI.header({
@@ -335,35 +362,94 @@
     if (q.b) CMP.b = q.b;
     if (!CMP.a) CMP.a = Z.order[0] || '';
     if (!CMP.b) CMP.b = Z.order[1] || '';
-    main.innerHTML = '<div class="card"><div class="sec-label">选择两首方剂</div>' +
-      '<div class="cmp-slot"><div class="cs-t">方剂 A</div><select class="cmp-sel" id="cmp-a">' + optionHTML(CMP.a) + '</select></div>' +
-      '<div class="cmp-slot"><div class="cs-t">方剂 B</div><select class="cmp-sel" id="cmp-b">' + optionHTML(CMP.b) + '</select></div>' +
-      '<div class="tiny dim">只比较「组成」里的药名（不含剂量）；附方也可参与对比。</div></div>' +
-      '<div id="cmp-out"></div>';
-    function paint() {
-      var r = Z.compareFormulas(CMP.a, CMP.b);
-      var out = main.querySelector('#cmp-out');
-      if (!r) { out.innerHTML = UI.emptyBox('请选择两首方剂'); return; }
-      function chips(arr, cls) {
-        return arr.length ? '<div class="tag-row">' + arr.map(function (x) {
-          return '<span class="chip ' + cls + '">' + esc(x) + '</span>';
-        }).join('') + '</div>' : '<div class="small dim">（无）</div>';
-      }
-      var derived = (r.a.ingredients.length === 0) || (r.b.ingredients.length === 0);
-      out.innerHTML = (derived ? '<div class="card" style="background:#fbf4e6;border-color:#e6d5b3"><div class="small" style="color:#7d2c21">' +
-        '提示：<b>' + esc((r.a.ingredients.length === 0 ? r.a.name : r.b.name)) + '</b> 的组成原文是「即某方加某药」的派生写法，' +
-        '程序不拆药名，因此这首方的药名对比结果会为空。</div></div>' : '') +
-        '<div class="card"><div class="row between"><div class="b">对比结果</div>' +
-        '<div class="tiny dim">' + esc(r.a.name) + ' ⇄ ' + esc(r.b.name) + '</div></div>' +
-        '<div class="cmp-res">' +
-        '<div class="cmp-sec"><div class="cmp-lab">共同含有的药（' + r.common.length + '）</div>' + chips(r.common, 'solid') + '</div>' +
-        '<div class="cmp-sec"><div class="cmp-lab">只有「' + esc(r.a.name) + '」有（' + r.onlyA.length + '）</div>' + chips(r.onlyA, 'gray') + '</div>' +
-        '<div class="cmp-sec"><div class="cmp-lab">只有「' + esc(r.b.name) + '」有（' + r.onlyB.length + '）</div>' + chips(r.onlyB, 'gray') + '</div>' +
-        '</div></div>';
+    if (CMP.a === CMP.b) { CMP.b = (Z.order.filter(function (x) { return x !== CMP.a; })[0]) || ''; }
+
+    function slotHTML(which, label) {
+      var f = Z.byId[CMP[which]];
+      var on = CMP.pick === which;
+      return '<div class="cmp-slot' + (on ? ' on' : '') + '">' +
+        '<div class="cs-t">' + label + '</div>' +
+        '<div class="cs-pick" data-pick="' + which + '">' +
+        '<span class="cs-n">' + esc(f ? f.name : '未选择') + '</span>' +
+        '<span class="cs-btn">' + (on ? '选择中…' : '搜索选择') + '</span></div>' +
+        (f ? '<div class="tiny dim mt6">' + esc(f.chapterNo + ' ' + f.chapterName + (f.sectionName ? ' · ' + f.sectionName : '')) +
+          (f.kind === 'attach' ? ' · 附方' : '') + '</div>' : '') +
+        '</div>';
     }
-    main.querySelector('#cmp-a').onchange = function (e) { CMP.a = e.target.value; paint(); };
-    main.querySelector('#cmp-b').onchange = function (e) { CMP.b = e.target.value; paint(); };
-    paint();
+
+    var h = [];
+    h.push('<div class="card"><div class="sec-label">选择两首方剂</div>' +
+      slotHTML('a', '方剂 A') + slotHTML('b', '方剂 B') +
+      '<div class="tiny dim">点方框可按方名搜索；比较的是「组成」里的药名（不含剂量），附方也能参与。</div></div>');
+
+    if (CMP.pick) {
+      h.push('<div class="card" id="pick-card" style="background:#fbf8f0"><div class="row between">' +
+        '<div class="sec-label" style="margin:0">选择' + (CMP.pick === 'a' ? '方剂 A' : '方剂 B') + '</div>' +
+        '<button class="btn xs" id="pick-cancel">取消</button></div>' +
+        '<div class="searchbox" style="margin-bottom:8px"><svg class="s-ico" viewBox="0 0 24 24">' +
+        '<circle cx="11" cy="11" r="6.5" fill="none" stroke-width="1.9"/>' +
+        '<path d="m16 16 4.5 4.5" stroke-width="1.9" stroke-linecap="round" fill="none"/></svg>' +
+        '<input class="input" id="pick-kw" placeholder="输入方名搜索，如：桂枝 / 柴胡 / 补益" value="' + esc(CMP.kw) + '"></div>' +
+        '<div class="pick-list" id="pick-list">' + pickListHTML() + '</div></div>');
+    } else {
+      var r = Z.compareFormulas(CMP.a, CMP.b);
+      if (!r) {
+        h.push(UI.emptyBox('请选择两首方剂'));
+      } else {
+        function chips(arr, cls) {
+          return arr.length ? '<div class="tag-row">' + arr.map(function (x) {
+            return '<span class="chip ' + cls + '">' + esc(x) + '</span>';
+          }).join('') + '</div>' : '<div class="small dim">（无）</div>';
+        }
+        var derivedName = (r.a.ingredients.length === 0 ? r.a.name : (r.b.ingredients.length === 0 ? r.b.name : ''));
+        if (derivedName) {
+          h.push('<div class="card" style="background:#fbf4e6;border-color:#e6d5b3"><div class="small" style="color:#7d2c21">' +
+            '提示：<b>' + esc(derivedName) + '</b> 的组成原文是「即某方加某药」的派生写法，程序不拆药名，所以这部分的药名对比为空。</div></div>');
+        }
+        h.push('<div class="card"><div class="row between"><div class="b">对比结果</div>' +
+          '<div class="tiny dim">' + esc(r.a.name) + ' ⇄ ' + esc(r.b.name) + '</div></div>' +
+          '<div class="cmp-res">' +
+          '<div class="cmp-sec"><div class="cmp-lab">共同含有的药（' + r.common.length + '）</div>' + chips(r.common, 'solid') + '</div>' +
+          '<div class="cmp-sec"><div class="cmp-lab">只有「' + esc(r.a.name) + '」有（' + r.onlyA.length + '）</div>' + chips(r.onlyA, 'gray') + '</div>' +
+          '<div class="cmp-sec"><div class="cmp-lab">只有「' + esc(r.b.name) + '」有（' + r.onlyB.length + '）</div>' + chips(r.onlyB, 'gray') + '</div>' +
+          '</div></div>');
+        h.push('<div class="small dim center" style="margin:10px 0 6px">换一首方：点上方方框搜索</div>');
+      }
+    }
+    main.innerHTML = h.join('');
+
+    UI.bind(main, '[data-pick]', function (el) {
+      var which = el.getAttribute('data-pick');
+      CMP.pick = (CMP.pick === which) ? '' : which;
+      CMP.kw = '';
+      renderCompare(main, [], {});
+      var card = document.getElementById('pick-card');
+      if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+    var cancel = main.querySelector('#pick-cancel');
+    if (cancel) cancel.onclick = function () { CMP.pick = ''; CMP.kw = ''; renderCompare(main, [], {}); };
+    var input = main.querySelector('#pick-kw');
+    if (input) {
+      input.oninput = function () {
+        CMP.kw = input.value;
+        var list = main.querySelector('#pick-list');
+        if (list) list.innerHTML = pickListHTML();
+        bindPickItems();
+      };
+      setTimeout(function () { input.focus(); try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { } }, 80);
+    }
+    function bindPickItems() {
+      var list = main.querySelector('#pick-list');
+      if (!list) return;
+      UI.bind(list, '[data-pick-id]', function (el) {
+        var id = el.getAttribute('data-pick-id');
+        CMP[CMP.pick] = id;
+        CMP.pick = '';
+        CMP.kw = '';
+        renderCompare(main, [], {});
+      });
+    }
+    bindPickItems();
   }
 
   /* =================================================================
