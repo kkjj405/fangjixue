@@ -308,7 +308,7 @@
     }
     var blocks = [];
     blocks.push({ k: 'basic', html: sec('组成', '<div class="fx-compo">' + esc(v.compositionRaw) + '</div>') });
-    if (v.song) blocks.push({ k: 'basic', html: sec('方歌', '<div class="fx-song">' + esc(v.song) + '</div>') });
+    if (v.song) blocks.push({ k: 'basic', html: sec('方歌', '<div class="fx-song">' + esc(Z.fmtSong(v.song)).replace(/\n/g, '<br>') + '</div>') });
     if (v.functionRaw) blocks.push({ k: 'simple', html: sec('功用', '<div class="fx-func">' + esc(v.functionRaw) + '</div>') });
     if (v.indicationRaw) {
       var ind = v.indication && v.indication.length

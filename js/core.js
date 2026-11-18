@@ -65,6 +65,34 @@
     return String(s || '').replace(/[。；;]+$/, '')
       .split(/[，,]/).map(function (x) { return x.trim(); }).filter(Boolean);
   }
+  /* 方歌排版：一句一行两句（每两句换一行），多段方歌按句号分段 */
+  function fmtSong(s) {
+    var t = String(s || '').trim();
+    if (!t) return '';
+    var sentences = [], buf = '', term = '';
+    for (var i = 0; i < t.length; i++) {
+      var ch = t.charAt(i);
+      if (ch === '。' || ch === '！' || ch === '？' || ch === '.' || ch === '!' || ch === '?') {
+        if (buf.trim()) { sentences.push({ text: buf.trim(), term: ch === '.' ? '。' : ch }); }
+        buf = '';
+      } else {
+        buf += ch;
+      }
+    }
+    if (buf.trim()) sentences.push({ text: buf.trim(), term: '' });
+    if (!sentences.length) return t;
+    var lines = [];
+    sentences.forEach(function (sent) {
+      var parts = sent.text.split(/[，,；;]/).map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!parts.length) return;
+      var local = [];
+      for (var k = 0; k < parts.length; k += 2) local.push(parts.slice(k, k + 2).join('，'));
+      if (sent.term && local.length) local[local.length - 1] += sent.term;
+      lines = lines.concat(local);
+    });
+    return lines.join('\n');
+  }
+
   var UNITS = '两钱分斤枚个片条升寸尺把克毫升匕握具对只束段盏杯碗';
   function cleanDrug(tok) {
     var t = String(tok || '').trim().replace(/钱半/g, '半钱');
@@ -362,6 +390,6 @@
     isHidden: isHidden, setHidden: setHidden, hiddenCount: hiddenCount,
     note: note, setNote: setNote, noteCount: noteCount,
     searchFormulas: searchFormulas, compareFormulas: compareFormulas,
-    normDrug: normDrug, DRUG_ALIAS: DRUG_ALIAS
+    normDrug: normDrug, DRUG_ALIAS: DRUG_ALIAS, fmtSong: fmtSong
   };
 })();
